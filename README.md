@@ -22,5 +22,6 @@ r 8 - sets mixed resolution mode
 
 #Graphics files
 Name files as "1_dvd", and "2_dvd"
+
 In case of mixed mode, mode-4 picture is "1_dvd", mode-8 is "2_dvd"
 
