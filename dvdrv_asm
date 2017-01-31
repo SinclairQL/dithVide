@@ -1,0 +1,167 @@
+*       dithVide for Sinclair QL
+* /interrupt handler in supervisor mode/
+*   (C) Omega 2006 (omega.webnode.com)
+
+
+; From CALL in SuperBASIC
+; use CALL [start],[mode]
+;  on entry    D1= lores=0/hires=4/mixed=8
+
+; HISTORY:
+; 2006 - Omega(Jan Palenicek), initial release
+; 2017 - Tcat(Tomas Kral), swap_scr, keyrow routines
+;        parameter passing
+
+st_size           equ $200          new stack size
+nm_frms           equ 900           no# of TV frames
+vram1             equ $20000        screen 1
+sv_base           equ $28000        system vars base
+nm_lins           equ $0fa          mixed mode settings
+ln_wait           equ $0006           "    "      "
+bg_wait           equ $02d7           "    "      "
+sv_plist          equ sv_base+$3c   interrupt polled linked list 50/60Hz
+pc_intr           equ $18021        interrupt hw status register
+mc_stat           equ $18063        master chip settings
+*                 bit 1   - screen off (1)
+*                 bit 3   - lores (1), hires (0)
+*                 bit 6   - (0) PAL, (1) NTSC
+*                 bit 7   - (0) VRAM starts $20000, (1) $28000
+
+
+start    trap     #0                ;Enter supervisor mode
+         ori.w    #$0700,sr         ;Disable interrupts
+         move.l   a6,-(a7)          ;Save A6,
+         lea      ssvsp,a0          ; and supervisor stack
+         move.l   sp,(a0)           ; registers
+
+         lea      newsp,sp          ;Set new stack ptr
+         lea      frames,a0         ;Restore
+         move.w   #nm_frms,(a0)     ; number of TV frames
+         bsr.s    swap_scr          ;Swap sysvars & 2nd vram
+
+
+; Link interrupt handler to the polled list
+; as there will be a single entry only in the list
+; we move handler to sv_plist, now part of second screen vram2
+; this trails a small pattern at the top of the screen
+
+modes    ds.l     3                 ;Mode selector jump table
+sel_tbl  lea      modes,a1
+         lea      lores,a2
+         move.l   a2,(a1)+          ; modes[0].b = lores
+         lea      hires,a2          ; modes[4].b = hires
+         move.l   a2,(a1)+          ; modes[8].b = mixed
+         lea      mixed,a2
+         move.l   a2,(a1)
+
+lnk_flip lea      flipper,a0        ;Link element =next,vector
+         movea.l  modes(pc,d1.w),a2 ;Select vector =modes[d1]
+         move.l   a2,4(a0)          ;Fill in vector address
+         move.l   a0,sv_plist       ;Link it to the polled list
+         andi.w   #$f8ff,sr         ;Enable interrupts
+
+
+; Now two vram{1,2} screens begin flipping
+; by system at 50/60Hz screen refresh rate
+
+loop     bra.s    loop
+
+
+; Scan for a key press in keyrow =[0..7]
+keyrow   lea      ipcmd,a3          ;Load IPC command address
+         moveq    #$07,d2           ;No# of rows 7 (-1 for DBcc)
+row_loop move.b   d2,6(a3)          ;Keyrow =7,6,..,0
+
+         moveq    #$11,d0           ;MT.IPCOM
+         trap     #1                ;Call IPC processor
+         tst.b    d1                ;Keyrow pressed?
+         bne.s    exit              ;Yes, exit
+         dbf      d2,row_loop       ;Scan next row
+         rts
+
+ipcmd    dc.l     $09010000         ;IPC command
+         dc.l     $00000002         ;9=kbd,1=4bits in,2=8bits out
+
+
+exit     ori.w    #$0700,sr         ;Disable interrupts
+         addq.l   #$04,sp           ;Discard flipper return address
+         bsr.s    cls               ;Clear screen
+         bsr.s    swap_scr          ;Swap sysvars & 2nd vram
+         move.b   #0,mc_stat        ;Switch to vram1, hires
+
+         movea.l  ssvsp,sp          ;Restore supervisor stack, and
+         movea.l  (a7)+,a6          ; A6 registers
+
+         clr.l    d0                ;No error
+         move.w   #$0800,sr         ;Enable interrupts, user mode
+         rts                        ;Return to BASIC
+
+
+; Swap screen vram2 buffer with system variables area
+; Move long words around for higher speed
+swap_scr move.l   #$1fff,d0         ;$8000/4-1 screen longs (-1 for DBcc)
+         lea      sv_base,a0
+         lea      vram2,a1
+scr_loop move.l   (a1),d2           ;Save temp long
+         move.l   (a0),(a1)+
+         move.l   d2,(a0)+
+         dbf      d0,scr_loop       ;Loop until -1 (false)
+         rts
+
+
+; Clear screen1 by long words
+cls      move.l   #$1fff,d0         ;$8000/4-1 screen longs (-1 for DBcc)
+         lea      vram1,a0
+clr_loop clr.l    (a0)+
+         dbf      d0,clr_loop       ;Loop until -1 (false)
+         rts
+
+
+flipper  dc.l     0                 ;Link to next handler =NULL
+         ds.l     1                 ;Interrupt handler vector
+
+
+lores    lea      vram_l,a0
+         bra.s    flip
+hires    lea      vram_h,a0
+flip     eor.b    #$80,(a0)
+         move.b   (a0),mc_stat
+;        bra.s    frm_cnt           ;Count down
+
+
+frm_cnt  lea      frames,a0         ;Count down
+         subi.w   #$01,(a0)         ; frames by #1
+         beq.s    exit              ;Exit when =0
+         bra      keyrow            ;Scan for a keypress
+
+
+mixed    move.b   #%00000010,mc_stat  ;Screen off
+         lea      vram_m,a0
+         move.b   (a0),d0
+         move.b   #%10001000,d1
+         move.w   #bg_wait,d4
+bg_wlp   dbra     d4,bg_wlp
+         move.w   #nm_lins,d2
+nm_llp   move.w   #ln_wait,d3
+         move.b   d0,mc_stat
+         eor.b    d1,d0
+ln_wlp   dbra     d3,ln_wlp
+         nop
+         nop
+         nop
+         nop
+         dbra     d2,nm_llp
+         eor.b    d1,(a0)
+         bra.s    frm_cnt           ;Count down
+
+
+frames   ds.w     1
+vram_l   dc.b     %00001000 ;Ram 0 Lores
+vram_m   dc.b     %00000000 ;Ram 0 Hires
+vram_h   dc.b     %10000000 ;Ram 0 Hires
+ssvsp    dc.l     0        ;Supervisor stack ptr
+         ds.b     st_size  ;New stack area
+newsp                      ;Stack pointer grows up
+vram2                      ;Second vram comes here
+
+         end
