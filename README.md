@@ -15,7 +15,9 @@ First two modes are pretty easy and straighforward to display - simply change ev
 
 #Command synopsis, from call in SuperBASIC
 r 0 - sets low resolution mode
+
 r 4 - sets high resolution mode
+
 r 8 - sets mixed resolution mode
 
 #Graphics files
