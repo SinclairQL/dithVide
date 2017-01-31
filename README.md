@@ -14,14 +14,11 @@ Basically, two images are altering (interlacing) each frame interrupt (50Hz), th
 First two modes are pretty easy and straighforward to display - simply change every frame int displayed videopage, Mixed mode is a bit harder and you need precise timing to display each scan line in different resolution. It is very similar to "multicolor" method on ZX Spectrum.
 
 #Command synopsis, from call in SuperBASIC
-r 0 - sets low resolution mode
-
-r 4 - sets high resolution mode
-
-r 8 - sets mixed resolution mode
+    r 0 - sets low resolution mode
+    r 4 - sets high resolution mode
+    r 8 - sets mixed resolution mode
 
 #Graphics files
-Name files as "1_dvd", and "2_dvd"
-
-In case of mixed mode, mode-4 picture is "1_dvd", mode-8 is "2_dvd"
+    Name files as "1_dvd", and "2_dvd"
+    In case of mixed mode, mode-4 picture is "1_dvd", mode-8 is "2_dvd"
 
